@@ -27,8 +27,9 @@ fi
 echo "🔨 Building AiM CSV to MD.app (arm64)..."
 rm -rf build dist
 
+# Use the spec file directly - no additional options
 PYINSTALLER_CONFIG_DIR="$CACHE_DIR" \
-    .venv/bin/pyinstaller aim_gui.spec
+    .venv/bin/pyinstaller AiM\ CSV\ to\ MD.spec
 
 echo ""
 echo "✅ Done: dist/AiM CSV to MD.app"

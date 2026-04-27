@@ -9,6 +9,7 @@ from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 import threading
 import math
+import time
 
 # 重いライブラリ (numpy/pandas) は起動時にロードしない。
 # 変換スレッド内で初回のみインポートする（lazy import）。
@@ -123,7 +124,13 @@ class AimConverterApp:
                 if not path.exists():
                     raise FileNotFoundError(f"File not found: {file_path}")
                 aim = _load_aim()
+                
+                # Show loading status immediately
+                self.update_status("📂 Loading CSV... (parsing headers)")
+                
+                # Load CSV with minimal processing first to get basic info
                 session = aim.read_aim_csv(str(path))
+                
                 self.csv_path = path
                 self.root.after(0, lambda: (
                     self.csv_label.config(
@@ -176,7 +183,10 @@ class AimConverterApp:
             self.update_status("🔄 Generating markdown...")
             all_laps = self.lap_mode.get() == "all"
 
-            md = aim.generate_markdown(session, all_laps=all_laps, sample_step=1.0)
+            # Use the sample step from UI
+            sample_step = float(self.sample_step.get())
+
+            md = aim.generate_markdown(session, all_laps=all_laps, sample_step=sample_step)
 
             output_path = self.output_dir / (self.csv_path.stem + "_aim_ai.md")
             output_path.write_text(md, encoding="utf-8")

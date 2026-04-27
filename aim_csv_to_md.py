@@ -138,13 +138,21 @@ def read_aim_csv(path: str | Path) -> AimSession:
             row = row[:ncols]
         fixed_rows.append(row)
 
+    # Create DataFrame with minimal processing for better performance
     df = pd.DataFrame(fixed_rows, columns=columns)
 
-   # 数値化できる列は数値化
+    # Only convert columns that are likely to be numeric
+    numeric_columns = []
     for col in df.columns:
-        converted = pd.to_numeric(df[col], errors="coerce")
-        if converted.notna().sum() > 0:
-            df[col] = converted
+        if col in ["Time", "LapTime"]:
+            numeric_columns.append(col)
+        elif "speed" in col.lower() or "throttle" in col.lower() or "rpm" in col.lower() or "gear" in col.lower() or "lean" in col.lower():
+            numeric_columns.append(col)
+    
+    # Convert only the identified numeric columns
+    for col in numeric_columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     if "Time" not in df.columns:
         raise ValueError("Time列が見つかりません。")
