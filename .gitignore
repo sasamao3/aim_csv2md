@@ -28,6 +28,10 @@ wheels/
 # PyInstaller
 #  - https://pyinstaller.readthedocs.io/en/latest/usage.html#options
 *.spec
+build/
+dist/
+*.pyc
+__pycache__/
 
 # Installer logs
 pip-log.txt
