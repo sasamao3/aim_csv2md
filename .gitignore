@@ -137,3 +137,9 @@ dist/
 # Local config
 local_config.py
 config.py
+
+# CSV
+*.csv
+
+#bestlap
+best_lap*
