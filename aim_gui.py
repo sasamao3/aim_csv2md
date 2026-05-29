@@ -140,10 +140,12 @@ class AimConverterApp:
                     self.update_status(f"✓ Loaded: {path.name}\n{len(session.data)} data points")
                 ))
             except Exception as e:
-                self.root.after(0, lambda: (
+                e_type = type(e).__name__
+                e_str = str(e)
+                self.root.after(0, lambda t=e_type, s=e_str: (
                     self.csv_label.config(text="Error loading file", foreground="red"),
-                    self.update_status(f"✗ Error: {type(e).__name__}\n{str(e)}"),
-                    messagebox.showerror("Error", f"{type(e).__name__}: {e}")
+                    self.update_status(f"✗ Error: {t}\n{s}"),
+                    messagebox.showerror("Error", f"{t}: {s}")
                 ))
         self.update_status("📂 Loading CSV...")
         threading.Thread(target=_worker, daemon=True).start()

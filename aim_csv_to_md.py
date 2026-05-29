@@ -442,7 +442,16 @@ def generate_markdown(session: AimSession, all_laps: bool = False, sample_step: 
     laps = split_laps(session)
     lap_times = get_lap_times(session, laps)
 
-    valid = [(i, t) for i, t in enumerate(lap_times) if t and math.isfinite(t) and 20 <= t <= 300]
+    finite_times = [t for t in lap_times if t and math.isfinite(t) and t > 0]
+    if not finite_times:
+        raise ValueError("No valid laps found in the CSV.")
+
+    import statistics
+    median_time = statistics.median(finite_times)
+    
+    # 偽ベストラップ（インラップ/アウトラップ等の異常に短いラップ）を排除
+    # 中央値の 70% 〜 300% の範囲を有効なラップとする
+    valid = [(i, t) for i, t in enumerate(lap_times) if t and math.isfinite(t) and (median_time * 0.7) <= t <= (median_time * 3.0)]
     if not valid:
         valid = [(i, t) for i, t in enumerate(lap_times) if t and math.isfinite(t)]
 
