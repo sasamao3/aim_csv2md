@@ -30,9 +30,11 @@ class AimConverterApp:
         self.root.title("AiM CSV to Markdown")
         self.root.geometry("900x650")
         
+        self.csv_paths = []
         self.csv_path = None
         self.output_dir = Path.home()
         self.output_path = None
+        self.output_paths = []
         
         # Create main frame
         main_frame = ttk.Frame(root, padding="15")
@@ -48,7 +50,7 @@ class AimConverterApp:
         csv_frame = ttk.Frame(main_frame)
         csv_frame.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=(0, 10), padx=0)
         
-        ttk.Button(csv_frame, text="Select File...", command=self.select_csv_file, width=15).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(csv_frame, text="Select Files...", command=self.select_csv_file, width=15).pack(side=tk.LEFT, padx=(0, 10))
         self.csv_label = ttk.Label(csv_frame, text="No file selected", foreground="gray")
         self.csv_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
@@ -108,47 +110,41 @@ class AimConverterApp:
     
     
     def select_csv_file(self):
-        """Select CSV file"""
-        file_path = filedialog.askopenfilename(
-            title="Select CSV File",
+        """Select CSV files"""
+        file_paths = filedialog.askopenfilenames(
+            title="Select CSV Files",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
         )
-        if file_path:
-            self.load_csv(file_path)
+        if file_paths:
+            self.load_csv(file_paths)
     
     def load_csv(self, file_path):
-        """Load and validate CSV (runs in background thread to keep UI responsive)"""
-        def _worker():
-            try:
-                path = Path(file_path)
-                if not path.exists():
-                    raise FileNotFoundError(f"File not found: {file_path}")
-                aim = _load_aim()
-                
-                # Show loading status immediately
-                self.update_status("📂 Loading CSV... (parsing headers)")
-                
-                # Load CSV with minimal processing first to get basic info
-                session = aim.read_aim_csv(str(path))
-                
-                self.csv_path = path
-                self.root.after(0, lambda: (
-                    self.csv_label.config(
-                        text=f"✓ {path.name} ({len(session.data)} rows)",
-                        foreground="green"
-                    ),
-                    self.update_status(f"✓ Loaded: {path.name}\n{len(session.data)} data points")
-                ))
-            except Exception as e:
-                e_type = type(e).__name__
-                e_str = str(e)
-                self.root.after(0, lambda t=e_type, s=e_str: (
-                    self.csv_label.config(text="Error loading file", foreground="red"),
-                    self.update_status(f"✗ Error: {t}\n{s}"),
-                    messagebox.showerror("Error", f"{t}: {s}")
-                ))
-        self.update_status("📂 Loading CSV...")
-        threading.Thread(target=_worker, daemon=True).start()
+        """Load one or more CSV files into the current batch selection"""
+        if isinstance(file_path, (str, Path)):
+            paths = [Path(file_path)]
+        else:
+            paths = [Path(p) for p in file_path]
+
+        self.csv_paths = paths
+        self.csv_path = paths[0] if paths else None
+        self.output_paths = []
+        self.output_path = None
+
+        if not paths:
+            self.csv_label.config(text="No file selected", foreground="gray")
+            self.update_status("Ready. Select CSV files and click CONVERT.")
+            return
+
+        if len(paths) == 1:
+            label_text = f"✓ {paths[0].name}"
+        else:
+            shown = ", ".join(path.name for path in paths[:3])
+            if len(paths) > 3:
+                shown += f", +{len(paths) - 3} more"
+            label_text = f"✓ {len(paths)} files selected: {shown}"
+
+        self.csv_label.config(text=label_text, foreground="green")
+        self.update_status(f"✓ Selected {len(paths)} CSV file(s)")
     
     def change_output_dir(self):
         """Change output directory"""
@@ -164,8 +160,8 @@ class AimConverterApp:
     
     def convert(self):
         """Convert CSV to Markdown"""
-        if not self.csv_path:
-            messagebox.showwarning("Warning", "Please select a CSV file")
+        if not self.csv_paths:
+            messagebox.showwarning("Warning", "Please select one or more CSV files")
             return
         
         self.convert_btn.config(state=tk.DISABLED)
@@ -179,30 +175,88 @@ class AimConverterApp:
         """Thread worker for conversion"""
         try:
             aim = _load_aim()
-            self.update_status("📖 Reading CSV...")
-            session = aim.read_aim_csv(str(self.csv_path))
-
-            self.update_status("🔄 Generating markdown...")
             all_laps = self.lap_mode.get() == "all"
-
-            # Use the sample step from UI
             sample_step = float(self.sample_step.get())
+            total = len(self.csv_paths)
+            successes = []
+            failures = []
+            used_output_paths = set()
 
-            md = aim.generate_markdown(session, all_laps=all_laps, sample_step=sample_step)
+            for index, csv_path in enumerate(self.csv_paths, start=1):
+                try:
+                    self.update_status(f"📖 [{index}/{total}] Reading CSV: {csv_path.name}...")
+                    session = aim.read_aim_csv(str(csv_path))
 
-            output_path = self.output_dir / (self.csv_path.stem + "_aim_ai.md")
-            output_path.write_text(md, encoding="utf-8")
-            self.output_path = output_path
+                    self.update_status(f"🔄 [{index}/{total}] Generating markdown: {csv_path.name}...")
+                    md = aim.generate_markdown(session, all_laps=all_laps, sample_step=sample_step)
 
-            # GPS サマリーを作成
-            gps_summary = self._build_gps_summary(aim, session)
+                    output_path = self._resolve_output_path(csv_path, used_output_paths)
+                    output_path.write_text(md, encoding="utf-8")
+                    gps_summary = self._build_gps_summary(aim, session)
 
-            self.root.after(0, self._convert_success, output_path, gps_summary)
+                    successes.append((csv_path, output_path, gps_summary))
+                except Exception as e:
+                    failures.append((csv_path, type(e).__name__, str(e)))
 
+            self.root.after(0, self._convert_batch_complete, successes, failures)
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"
             self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
             self.root.after(0, self._convert_failed)
+
+    def _resolve_output_path(self, csv_path: Path, used_output_paths: set[Path]) -> Path:
+        """Create a unique output path for batch conversion"""
+        candidate = self.output_dir / f"{csv_path.stem}_aim_ai.md"
+        suffix = 2
+        while candidate in used_output_paths or candidate.exists():
+            candidate = self.output_dir / f"{csv_path.stem}_aim_ai_{suffix}.md"
+            suffix += 1
+        used_output_paths.add(candidate)
+        return candidate
+
+    def _convert_batch_complete(self, successes, failures):
+        """Handle batch conversion completion"""
+        self.output_paths = [output_path for _, output_path, _ in successes]
+        self.output_path = self.output_paths[-1] if self.output_paths else None
+
+        if not successes and failures:
+            lines = ["✗ Conversion failed."]
+            for csv_path, err_type, err_msg in failures:
+                lines.append(f"- {csv_path.name}: {err_type}: {err_msg}")
+            self.update_status("\n".join(lines))
+            self.convert_btn.config(state=tk.NORMAL)
+            messagebox.showerror("Error", "\n".join(lines))
+            return
+
+        lines = [f"✓ {len(successes)} file(s) converted."]
+        for csv_path, output_path, gps_summary in successes:
+            lines.append(f"- {csv_path.name} -> {output_path.name}")
+            if gps_summary:
+                lines.append(gps_summary)
+
+        if failures:
+            lines.append("")
+            lines.append(f"⚠ {len(failures)} file(s) failed.")
+            for csv_path, err_type, err_msg in failures:
+                lines.append(f"- {csv_path.name}: {err_type}: {err_msg}")
+
+        self.update_status("\n".join(lines))
+        self.convert_btn.config(state=tk.NORMAL)
+
+        if failures:
+            messagebox.showwarning(
+                "Done with warnings",
+                f"{len(successes)} file(s) converted, {len(failures)} file(s) failed.\n\n"
+                + "\n".join(f"- {csv_path.name}: {err_type}: {err_msg}" for csv_path, err_type, err_msg in failures)
+            )
+        elif len(successes) == 1:
+            output_path = successes[0][1]
+            messagebox.showinfo("Done", f"✓ 変換完了\n\n{output_path.name}\n→ {output_path.parent}")
+        else:
+            messagebox.showinfo(
+                "Done",
+                f"✓ 変換完了\n\n{len(successes)} file(s)\n→ {self.output_dir}"
+            )
 
     def _build_gps_summary(self, aim, session) -> str:
         """ベストラップのGPS情報サマリー文字列を返す"""
@@ -272,11 +326,16 @@ class AimConverterApp:
     
     def update_status(self, msg):
         """Update status display"""
-        self.status.config(state=tk.NORMAL)
-        self.status.delete(1.0, tk.END)
-        self.status.insert(tk.END, msg)
-        self.status.config(state=tk.DISABLED)
-        self.root.update()
+        def _apply():
+            self.status.config(state=tk.NORMAL)
+            self.status.delete(1.0, tk.END)
+            self.status.insert(tk.END, msg)
+            self.status.config(state=tk.DISABLED)
+
+        if threading.current_thread() is threading.main_thread():
+            _apply()
+        else:
+            self.root.after(0, _apply)
     
     def open_output_folder(self):
         """Open output folder"""

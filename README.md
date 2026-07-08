@@ -46,10 +46,10 @@ The build process creates:
 ## Usage
 
 1. Launch the application
-2. Click "Select CSV File" to choose a CSV file
-3. Click "Convert to Markdown" to process the file
-4. The converted Markdown will be displayed in the output area
-5. Click "Copy to Clipboard" to copy the Markdown to your clipboard
+2. Click "Select Files..." to choose one or more CSV files
+3. Click "CONVERT" to process all selected files
+4. Each converted Markdown file will be written to the output directory
+5. Open the output folder to review the generated files
 
 ## Performance Improvements
 
