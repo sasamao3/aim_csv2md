@@ -27,9 +27,18 @@ fi
 echo "🔨 Building AiM CSV to MD.app (arm64)..."
 rm -rf build dist
 
+PYTHON_BIN="${PYTHON_BIN:-$SCRIPT_DIR/.venv/bin/python3}"
+if [ -x "$SCRIPT_DIR/.venv/bin/pyinstaller" ]; then
+    PYINSTALLER_CMD=("$SCRIPT_DIR/.venv/bin/pyinstaller")
+elif command -v pyinstaller >/dev/null 2>&1; then
+    PYINSTALLER_CMD=("pyinstaller")
+else
+    PYINSTALLER_CMD=("$PYTHON_BIN" -m PyInstaller)
+fi
+
 # Use the spec file directly - no additional options
 PYINSTALLER_CONFIG_DIR="$CACHE_DIR" \
-    .venv/bin/pyinstaller AiM\ CSV\ to\ MD.spec
+    "${PYINSTALLER_CMD[@]}" AiM\ CSV\ to\ MD.spec
 
 echo ""
 echo "✅ Done: dist/AiM CSV to MD.app"
