@@ -7,6 +7,7 @@ AiM CSV to Markdown GUI Application
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
+import queue
 import threading
 import math
 import time
@@ -39,6 +40,7 @@ class AimConverterApp:
         self.debug_window = None
         self.debug_text = None
         self.debug_lines = []
+        self.ui_queue = queue.Queue()
         
         # Create main frame
         main_frame = ttk.Frame(root, padding="15")
@@ -112,6 +114,7 @@ class AimConverterApp:
         # Configure weights
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(10, weight=1)
+        self.root.after(50, self._process_ui_queue)
         self.log_debug("App initialized")
     
     
@@ -222,13 +225,13 @@ class AimConverterApp:
                     self.log_debug(f"[{index}/{total}] Failed for {csv_path.name}: {type(e).__name__}: {e}")
                     self.log_debug(error_text)
 
-            self.root.after(0, self._convert_batch_complete, successes, failures)
+            self._schedule_ui(self._convert_batch_complete, successes, failures)
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"
             self.log_debug(f"Fatal conversion error: {error_msg}")
             self.log_debug(traceback.format_exc())
-            self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
-            self.root.after(0, self._convert_failed)
+            self._schedule_ui(messagebox.showerror, "Error", error_msg)
+            self._schedule_ui(self._convert_failed)
 
     def _resolve_output_path(self, csv_path: Path, used_output_paths: set[Path]) -> Path:
         """Create a unique output path for batch conversion"""
@@ -351,10 +354,10 @@ class AimConverterApp:
         self.update_status("✗ Conversion failed.")
         self.convert_btn.config(state=tk.NORMAL)
         self.log_debug("Conversion failed and UI restored")
-    
+
     def update_status(self, msg):
         """Update status display"""
-        def _apply():
+        def _apply() -> None:
             self.status.config(state=tk.NORMAL)
             self.status.delete(1.0, tk.END)
             self.status.insert(tk.END, msg)
@@ -363,7 +366,7 @@ class AimConverterApp:
         if threading.current_thread() is threading.main_thread():
             _apply()
         else:
-            self.root.after(0, _apply)
+            self._schedule_ui(_apply)
 
     def log_debug(self, msg: str):
         """Append a debug line and mirror it to the debug window if open."""
@@ -372,7 +375,7 @@ class AimConverterApp:
         self.debug_lines.append(line)
         print(line, flush=True)
 
-        def _apply():
+        def _apply() -> None:
             if self.debug_text is None:
                 return
             self.debug_text.config(state=tk.NORMAL)
@@ -383,7 +386,25 @@ class AimConverterApp:
         if threading.current_thread() is threading.main_thread():
             _apply()
         else:
-            self.root.after(0, _apply)
+            self._schedule_ui(_apply)
+
+    def _schedule_ui(self, func, *args, **kwargs):
+        """Queue a UI update to be applied on the Tk main thread."""
+        self.ui_queue.put((func, args, kwargs))
+
+    def _process_ui_queue(self):
+        """Drain queued UI updates on the Tk main thread."""
+        try:
+            while True:
+                func, args, kwargs = self.ui_queue.get_nowait()
+                try:
+                    func(*args, **kwargs)
+                except Exception as e:
+                    print(f"[UI] {type(e).__name__}: {e}", flush=True)
+                    print(traceback.format_exc(), flush=True)
+        except queue.Empty:
+            pass
+        self.root.after(50, self._process_ui_queue)
 
     def show_debug_window(self):
         """Open a scrollable debug log window."""
